@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>2D Car Racing</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body{
+    margin:0;
+    background:#0b0f14;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    font-family:Arial, system-ui;
+  }
+  canvas{
+    background:#111827;
+    border:2px solid #334155;
+    border-radius:12px;
+  }
+
+  /* ✅ SCOREBOARD */
+  .hud{
+    position:fixed;
+    top:12px;
+    left:0;
+    right:0;
+    display:flex;
+    justify-content:center;
+    gap:12px;
+    pointer-events:none;
+    z-index:999;
+  }
+  .hud .box{
+    color:#e2e8f0;
+    font-weight:700;
+    font-size:14px;
+    padding:8px 12px;
+    background:rgba(2,6,23,0.60);
+    border:1px solid #334155;
+    border-radius:12px;
+    min-width:120px;
+    text-align:center;
+  }
+
+  .hint{
+    position:fixed;
+    bottom:12px;
+    color:#cbd5e1;
+    font-size:14px;
+    text-align:center;
+    width:100%;
+  }
+</style>
+</head>
+<body>
+
+<!-- ✅ SCOREBOARD HTML -->
+<div class="hud">
+  <div class="box" id="scoreBox">Score: 0</div>
+  <div class="box" id="bestBox">Best: 0</div>
+</div>
+
+<canvas id="game" width="420" height="700"></canvas>
+<div class="hint">Move: ← → • Restart: Space</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+const scoreBox = document.getElementById("scoreBox");
+const bestBox  = document.getElementById("bestBox");
+
+/* ✅ SAFE BEST SCORE STORAGE */
+function getBestScore(){
+  try { return Number(localStorage.getItem("bestScore") || "0"); }
+  catch { return 0; }
+}
+function setBestScore(v){
+  try { localStorage.setItem("bestScore", String(v)); } catch {}
+}
+
+let bestScore = getBestScore();
+bestBox.textContent = "Best: " + bestScore;
+
+let crashed = false;
+let score = 0;
+let frame = 0;
+
+const keys = {};
+addEventListener("keydown", e => {
+  keys[e.code] = true;
+  if (e.code === "Space" && crashed) restart();
+});
+addEventListener("keyup", e => keys[e.code] = false);
+
+// --- Player car
+const player = {
+  w: 46,
+  h: 86,
+  x: W/2 - 23,
+  y: H - 120,
+  speed: 7,
+  color: "#e5e7eb"
+};
+
+// --- Enemy cars
+let enemies = [];
+
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+
+function hit(a,b){
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
+
+// Draw a "real" top-down car
+function drawCar(x, y, w, h, bodyColor){
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = "#000";
+  roundRect(x-3, y+5, w+6, h+6, 12);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = bodyColor;
+  roundRect(x, y, w, h, 12);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+  roundRect(x + 8, y + 12, w - 16, 24, 8);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  roundRect(x + w/2 - 4, y + 10, 8, h - 20, 6);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  roundRect(x + 6, y + 6, 10, 10, 4);
+  roundRect(x + w - 16, y + 6, 10, 10, 4);
+  ctx.fill();
+
+  ctx.fillStyle = "#0f172a";
+  roundRect(x - 4, y + 16, 8, 18, 4);
+  roundRect(x + w - 4, y + 16, 8, 18, 4);
+  roundRect(x - 4, y + h - 34, 8, 18, 4);
+  roundRect(x + w - 4, y + h - 34, 8, 18, 4);
+  ctx.fill();
+}
+
+function roundRect(x,y,w,h,r){
+  r = Math.min(r, w/2, h/2);
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y,   x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x,   y+h, r);
+  ctx.arcTo(x,   y+h, x,   y,   r);
+  ctx.arcTo(x,   y,   x+w, y,   r);
+  ctx.closePath();
+}
+
+// Spawn enemy cars in lanes
+function spawnEnemy(){
+  const lanes = 3;
+  const laneW = W / lanes;
+  const lane = Math.floor(Math.random() * lanes);
+
+  const w = 46, h = 86;
+  const x = lane * laneW + laneW/2 - w/2;
+  const y = -h - 30;
+
+  const colors = ["#ef4444","#22c55e","#3b82f6","#f59e0b","#a855f7","#14b8a6"];
+  const color = colors[Math.floor(Math.random() * colors.length)];
+
+  enemies.push({
+    x, y, w, h,
+    speed: 4 + Math.random() * 2.5,
+    color
+  });
+}
+
+function restart(){
+  crashed = false;
+  score = 0;
+  frame = 0;
+  enemies = [];
+  player.x = W/2 - player.w/2;
+
+  scoreBox.textContent = "Score: " + score;
+  bestBox.textContent  = "Best: " + bestScore;
+}
+
+function update(){
+  frame++;
+
+  if (!crashed) {
+    if (keys["ArrowLeft"])  player.x -= player.speed;
+    if (keys["ArrowRight"]) player.x += player.speed;
+  }
+  player.x = clamp(player.x, 12, W - player.w - 12);
+
+  if (!crashed && frame % 55 === 0) spawnEnemy();
+
+  for (const e of enemies) {
+    e.y += e.speed;
+    if (!crashed && hit(player, e)) crashed = true;
+  }
+  enemies = enemies.filter(e => e.y < H + 120);
+
+  if (!crashed) {
+    score++;
+    scoreBox.textContent = "Score: " + score;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestBox.textContent = "Best: " + bestScore;
+      setBestScore(bestScore);
+    }
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  ctx.fillStyle = "#111827";
+  ctx.fillRect(0,0,W,H);
+
+  ctx.strokeStyle = "#94a3b8";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([20, 16]);
+  ctx.beginPath();
+  ctx.moveTo(W/3, 0); ctx.lineTo(W/3, H);
+  ctx.moveTo(2*W/3, 0); ctx.lineTo(2*W/3, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  for (const e of enemies) drawCar(e.x, e.y, e.w, e.h, e.color);
+  drawCar(player.x, player.y, player.w, player.h, player.color);
+
+  if (crashed) {
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "28px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText("CRASH!", W/2, H/2 - 10);
+    ctx.font = "16px Arial";
+    ctx.fillText("Press Space to restart", W/2, H/2 + 25);
+    ctx.textAlign = "left";
+  }
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+restart();
+loop();
+</script>
+</body>
+</html>
